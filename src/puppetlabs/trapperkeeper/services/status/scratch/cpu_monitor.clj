@@ -6,8 +6,7 @@
 
 (defn get-process-cpu-time
   []
-  (let [bean-cpu-time (jmx/read "java.lang:type=OperatingSystem"
-                                :ProcessCpuTime)
+  (let [bean-cpu-time (jmx/read "java.lang:type=OperatingSystem" :ProcessCpuTime)
         ;; TODO: this value could be cached/memoized
         cpu-multiplier (if (contains?
                             (vec (jmx/attribute-names "java.lang:type=OperatingSystem"))
@@ -26,12 +25,10 @@
 
 (defn calculate-usage
   [process-time prev-process-time uptime-diff]
-  (if (= -1 prev-process-time)
+  (if (or (= -1 prev-process-time) (<= uptime-diff 0))
     0
     (let [process-time-diff (- process-time prev-process-time)]
-      (if (> uptime-diff 0)
-        (min (* 100 (/ process-time-diff uptime-diff)) 100)
-        0))))
+      (min (* 100 (/ process-time-diff uptime-diff)) 100))))
 
 (defn get-cpu-values
   [{prev-uptime :uptime
@@ -53,7 +50,8 @@
      :cpu-usage (float (max cpu-usage 0))
      :gc-usage (float (max gc-usage 0))}))
 
-;;;;;;;;;;;;;;;;; SCRATCH CODE for playing around with this
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; SCRATCH CODE for playing around with this
 (def last-snapshot (atom nil))
 
 (def monitor-future (atom nil))
