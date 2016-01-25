@@ -1,7 +1,8 @@
 (ns puppetlabs.trapperkeeper.services.status.scratch.cpu-monitor
   (:require [clojure.java.jmx :as jmx]
             [puppetlabs.kitchensink.core :as ks])
-  (:import (java.lang.management ManagementFactory)))
+  (:import (java.lang.management ManagementFactory)
+           (java.util ArrayList)))
 
 
 ;Long cputime = (Long)conn.getAttribute(osName,PROCESS_CPU_TIME_ATTR);
@@ -73,7 +74,10 @@
 ;}
 
 (defn get-cpu-values
-  [prev-uptime prev-process-cpu-time prev-process-gc-time]
+  [{prev-uptime :uptime
+    prev-process-cpu-time :process-cpu-time
+    prev-process-gc-time :process-gc-time
+    :as prev-snapshot}]
   (let [runtime-bean (ManagementFactory/getRuntimeMXBean)
         ;; could cache / memoize num-cpus
         num-cpus (ks/num-cpus)
@@ -86,13 +90,13 @@
                     0
                     (let [process-time-diff (- process-cpu-time prev-process-cpu-time)]
                       (if (> uptime-diff 0)
-                        (min (* 1000 (/ process-time-diff uptime-diff)) 1000)
+                        (min (* 100 (/ process-time-diff uptime-diff)) 100)
                         0)))
         gc-usage (if (= -1 prev-process-gc-time)
                    0
                    (let [process-gc-time-diff (- process-gc-time prev-process-gc-time)]
                      (if (> uptime-diff 0)
-                       (min (* 1000 (/ process-gc-time-diff uptime-diff)) 1000)
+                       (min (* 100 (/ process-gc-time-diff uptime-diff)) 100)
                        0)))]
     #_(when (not= -1 prev-uptime)
       (let [uptime-diff (- uptime prev-uptime)]
@@ -114,6 +118,46 @@
     {:snapshot {:uptime uptime
                 :process-cpu-time process-cpu-time
                 :process-gc-time process-gc-time}
-     :cpu-usage (max cpu-usage 0)
-     :gc-usage (max gc-usage 0)}))
+     :cpu-usage (float (max cpu-usage 0))
+     :gc-usage (float (max gc-usage 0))}))
 
+;;;;;;;;;;;;;;;;; SCRATCH CODE for playing around with this
+(def last-snapshot (atom nil))
+
+(def monitor-future (atom nil))
+(def malloc-future (atom nil))
+
+(defn start-monitor
+  []
+  (if-not (nil? @monitor-future)
+    (future-cancel @monitor-future))
+  (reset! last-snapshot {:uptime -1
+                         :process-cpu-time -1
+                         :process-gc-time -1})
+  (reset! monitor-future (future
+                          (while (not (Thread/interrupted))
+                            (let [cpu-values (get-cpu-values @last-snapshot)]
+                              (reset! last-snapshot (:snapshot cpu-values))
+                              (println "GOT NEW VALUES")
+                              (clojure.pprint/pprint cpu-values))
+                            (Thread/sleep 1000)))))
+
+(defn stop-monitor
+  []
+  (future-cancel @monitor-future)
+  (reset! monitor-future nil))
+
+(defn start-malloc
+  []
+  (if-not (nil? @malloc-future)
+    (future-cancel @malloc-future))
+  (reset! malloc-future (future (while (not (Thread/interrupted))
+                                  (let [al (ArrayList.)]
+                                    (doseq [i (range 2000000)]
+                                      (.add al (Math/random))
+                                      (Thread/yield)))))))
+
+(defn stop-malloc
+  []
+  (future-cancel @malloc-future)
+  (reset! malloc-future nil))
