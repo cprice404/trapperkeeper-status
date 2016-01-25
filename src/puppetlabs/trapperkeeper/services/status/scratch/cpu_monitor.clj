@@ -1,5 +1,37 @@
 (ns puppetlabs.trapperkeeper.services.status.scratch.cpu-monitor
+  (:require [clojure.java.jmx :as jmx])
   (:import (java.lang.management ManagementFactory)))
+
+
+;Long cputime = (Long)conn.getAttribute(osName,PROCESS_CPU_TIME_ATTR);
+;
+;return cputime.longValue()*processCPUTimeMultiplier;
+
+;;"java.lang:type=OperatingSystem" "ProcessCpuTime"
+
+(defn get-process-cpu-time
+  []
+  (let [bean-cpu-time (jmx/read "java.lang:type=OperatingSystem"
+                                :ProcessCpuTime)
+        ;; TODO: this value could be cached/memoized
+        cpu-multiplier (if (contains?
+                            (vec (jmx/attribute-names "java.lang:type=OperatingSystem"))
+                            :ProcessingCapacity)
+                         (jmx/read "java.lang:type=OperatingSystem" :ProcessingCapacity)
+                         1)]
+    (* bean-cpu-time cpu-multiplier)))
+
+;for (GarbageCollectorMXBean gcBean : gcList) {
+; collectionTime+=gcBean.getCollectionTime();
+;}
+
+(defn get-collection-time
+  []
+  ;; TODO: could cache/memoize bean names?  should also add error handling in
+  ;;  case it's possible that some bean w/o a :CollectionTime attribute ends up
+  ;;  in the list?
+  (let [gc-bean-names (jmx/mbean-names "java.lang:type=GarbageCollector,*")]
+    (apply + (map #(jmx/read % :CollectionTime) gc-bean-names))))
 
 ;long[] getValues(MonitoredData data) {
 ; long cpuUsage = -1;
@@ -40,7 +72,7 @@
 ;}
 
 (defn get-cpu-values
-  [prev-uptime prev-process-cpu-time prev-process-gc-time]
+  [num-cpus prev-uptime prev-process-cpu-time prev-process-gc-time]
   (let [runtime-bean (ManagementFactory/getRuntimeMXBean)
         ;cpu-usage -1
         ;gc-usage -1
