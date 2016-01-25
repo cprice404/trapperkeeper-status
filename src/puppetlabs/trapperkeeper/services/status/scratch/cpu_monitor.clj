@@ -42,13 +42,26 @@
 (defn get-cpu-values
   [prev-uptime prev-process-cpu-time prev-process-gc-time]
   (let [runtime-bean (ManagementFactory/getRuntimeMXBean)
-        cpu-usage -1
-        gc-usage -1
+        ;cpu-usage -1
+        ;gc-usage -1
         uptime (* (.getUptime runtime-bean) 1000000)
         process-cpu-time (/ (get-process-cpu-time) num-cpus)
         process-gc-time (/ (* (get-collection-time) 1000000)
-                           num-cpus)]
-    (when (not= -1 prev-uptime)
+                           num-cpus)
+        uptime-diff (if (= -1 prev-uptime) uptime (- uptime prev-uptime))
+        cpu-usage (if (= -1 prev-process-cpu-time)
+                    0
+                    (let [process-time-diff (- process-cpu-time prev-process-cpu-time)]
+                      (if (> uptime-diff 0)
+                        (min (* 1000 (/ process-time-diff uptime-diff)) 1000)
+                        0)))
+        gc-usage (if (= -1 prev-process-gc-time)
+                   0
+                   (let [process-gc-time-diff (- process-gc-time prev-process-gc-time)]
+                     (if (> uptime-diff 0)
+                       (min (* 1000 (/ process-gc-time-diff uptime-diff)) 1000)
+                       0)))]
+    #_(when (not= -1 prev-uptime)
       (let [uptime-diff (- uptime prev-uptime)]
         (when (not= -1 prev-process-cpu-time)
           (let [process-time-diff (- process-cpu-time prev-process-cpu-time)
