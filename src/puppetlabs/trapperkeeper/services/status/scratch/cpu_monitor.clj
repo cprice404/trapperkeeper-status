@@ -1,5 +1,6 @@
 (ns puppetlabs.trapperkeeper.services.status.scratch.cpu-monitor
-  (:require [clojure.java.jmx :as jmx])
+  (:require [clojure.java.jmx :as jmx]
+            [puppetlabs.kitchensink.core :as ks])
   (:import (java.lang.management ManagementFactory)))
 
 
@@ -72,10 +73,10 @@
 ;}
 
 (defn get-cpu-values
-  [num-cpus prev-uptime prev-process-cpu-time prev-process-gc-time]
+  [prev-uptime prev-process-cpu-time prev-process-gc-time]
   (let [runtime-bean (ManagementFactory/getRuntimeMXBean)
-        ;cpu-usage -1
-        ;gc-usage -1
+        ;; could cache / memoize num-cpus
+        num-cpus (ks/num-cpus)
         uptime (* (.getUptime runtime-bean) 1000000)
         process-cpu-time (/ (get-process-cpu-time) num-cpus)
         process-gc-time (/ (* (get-collection-time) 1000000)
