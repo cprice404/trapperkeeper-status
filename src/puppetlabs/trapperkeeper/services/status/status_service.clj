@@ -31,6 +31,9 @@
     (assoc context :status-fns (atom {})))
 
   (start [this context]
+   (let [config (status-core/validate-config (get-in-config [:status]))]
+     (status-core/schedule-bg-tasks interspaced status-logging/log-status config))
+
     (register-status this status-core/status-service-name
                      status-core/status-service-version
                      1
