@@ -28,11 +28,17 @@
    [:SchedulerService interspaced]]
 
   (init [this context]
-    (assoc context :status-fns (atom {})))
+    (assoc context :status-fns (atom {})
+                   :last-cpu-snapshot (atom {:snapshot {:uptime -1
+                                                        :process-cpu-time -1
+                                                        :process-gc-time -1}
+                                             :cpu-usage -1
+                                             :gc-usage -1})))
 
   (start [this context]
    (let [config (status-core/validate-config (get-in-config [:status]))]
-     (status-core/schedule-bg-tasks interspaced status-logging/log-status config))
+     (status-core/schedule-bg-tasks interspaced status-logging/log-status
+                                    config (:last-cpu-snapshot context)))
 
     (register-status this status-core/status-service-name
                      status-core/status-service-version

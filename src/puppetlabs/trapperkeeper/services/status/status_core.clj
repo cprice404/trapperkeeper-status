@@ -9,6 +9,7 @@
             [puppetlabs.kitchensink.core :as ks]
             [puppetlabs.ring-middleware.utils :as ringutils]
             [puppetlabs.ring-middleware.core :as middleware]
+            [puppetlabs.trapperkeeper.services.status.cpu-monitor :as cpu]
             [trptcolin.versioneer.core :as versioneer]
             [clojure.java.jmx :as jmx]
             [puppetlabs.i18n.core :as i18n])
@@ -97,7 +98,8 @@
   (schema/maybe {:interval-minutes schema/Num}))
 
 (def StatusServiceConfig
-  {(schema/optional-key :debug-logging) DebugLoggingConfig})
+  {(schema/optional-key :debug-logging) DebugLoggingConfig
+   (schema/optional-key :cpu-metrics-interval-ms) schema/Int})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Private
@@ -176,6 +178,10 @@
      :up-time-ms (.getUptime runtime-bean)
      :start-time-ms (.getStartTime runtime-bean)}))
 
+(schema/defn update-cpu-usage-metrics
+  [last-cpu-snapshot :- (schema/atom cpu/CpuUsageSnapshot)]
+  (swap! last-cpu-snapshot cpu/get-cpu-values))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Public
 
@@ -190,12 +196,18 @@
 (schema/defn ^:always-validate schedule-bg-tasks
   [interspaced :- IFn
    log-status :- IFn
-   config :- StatusServiceConfig]
+   config :- StatusServiceConfig
+   last-cpu-snapshot :- (schema/atom cpu/CpuUsageSnapshot)]
   (let [interval-minutes (get-in config [:debug-logging :interval-minutes])]
     (when interval-minutes
       (let [interval-milliseconds (* 60000 interval-minutes)]
         (log/info "Starting background logging of status data")
-        (interspaced interval-milliseconds log-status)))))
+        (interspaced interval-milliseconds log-status))))
+  (let [cpu-metrics-interval-ms (get-in config [:cpu-metrics-interval-ms] 0)]
+    (when (pos? cpu-metrics-interval-ms)
+      (log/info "Starting background monitoring of cpu usage metrics")
+      (interspaced cpu-metrics-interval-ms
+                   (partial update-cpu-usage-metrics last-cpu-snapshot)))))
 
 (schema/defn ^:always-validate nominal? :- schema/Bool
   [status :- ServiceStatus]

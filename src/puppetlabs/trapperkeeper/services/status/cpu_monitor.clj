@@ -1,10 +1,24 @@
-(ns puppetlabs.trapperkeeper.services.status.scratch.cpu-monitor
+(ns puppetlabs.trapperkeeper.services.status.cpu-monitor
   (:require [clojure.java.jmx :as jmx]
             [puppetlabs.kitchensink.core :as ks]
-            [clojure.tools.logging :as log])
+            [clojure.tools.logging :as log]
+            [schema.core :as schema])
   (:import (java.lang.management ManagementFactory)
            (java.util ArrayList)
            (javax.management AttributeNotFoundException)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Schemas
+
+(def CpuUsageSnapshot
+  {:snapshot {:uptime schema/Int
+              :process-cpu-time schema/Int
+              :process-gc-time schema/Int}
+   :cpu-usage schema/Num
+   :gc-usage schema/Num})
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Private
 
 (defn- cpu-multiplier*
   []
@@ -38,6 +52,7 @@
                 (gc-bean-names))
       0)))
 
+;; TODO: schema
 (defn calculate-usage
   [process-time prev-process-time uptime-diff]
   (if (or (= -1 prev-process-time) (<= uptime-diff 0))
@@ -45,25 +60,32 @@
     (let [process-time-diff (- process-time prev-process-time)]
       (min (* 100 (/ process-time-diff uptime-diff)) 100))))
 
-(defn get-cpu-values
-  [{prev-uptime :uptime
-    prev-process-cpu-time :process-cpu-time
-    prev-process-gc-time :process-gc-time
-    :as prev-snapshot}]
-  (let [runtime-bean (ManagementFactory/getRuntimeMXBean)
-        ;; could cache / memoize num-cpus
-        num-cpus (ks/num-cpus)
-        uptime (* (.getUptime runtime-bean) 1000000)
-        process-cpu-time (/ (get-process-cpu-time) num-cpus)
-        process-gc-time (/ (* (get-collection-time) 1000000) num-cpus)
-        uptime-diff (if (= -1 prev-uptime) uptime (- uptime prev-uptime))
-        cpu-usage (calculate-usage process-cpu-time prev-process-cpu-time uptime-diff)
-        gc-usage (calculate-usage process-gc-time prev-process-gc-time uptime-diff)]
-    {:snapshot {:uptime uptime
-                :process-cpu-time process-cpu-time
-                :process-gc-time process-gc-time}
-     :cpu-usage (float (max cpu-usage 0))
-     :gc-usage (float (max gc-usage 0))}))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Public
+
+;; TODO: schema
+(schema/defn get-cpu-values :- CpuUsageSnapshot
+  [last-snapshot :- CpuUsageSnapshot]
+  (let [{prev-uptime :uptime
+         prev-process-cpu-time :process-cpu-time
+         prev-process-gc-time :process-gc-time} (:snapshot last-snapshot)]
+    (let [runtime-bean (ManagementFactory/getRuntimeMXBean)
+          ;; could cache / memoize num-cpus
+          num-cpus (ks/num-cpus)
+          uptime (* (.getUptime runtime-bean) 1000000)
+          process-cpu-time (/ (get-process-cpu-time) num-cpus)
+          process-gc-time (/ (* (get-collection-time) 1000000) num-cpus)
+          uptime-diff (if (= -1 prev-uptime) uptime (- uptime prev-uptime))
+          cpu-usage (calculate-usage process-cpu-time prev-process-cpu-time uptime-diff)
+          gc-usage (calculate-usage process-gc-time prev-process-gc-time uptime-diff)]
+
+      (let [result {:snapshot {:uptime uptime
+                               :process-cpu-time process-cpu-time
+                               :process-gc-time process-gc-time}
+                    :cpu-usage (float (max cpu-usage 0))
+                    :gc-usage (float (max gc-usage 0))}]
+        (log/trace "Latest cpu usage metrics: " (ks/pprint-to-string result))
+        result))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SCRATCH CODE for playing around with this
