@@ -92,14 +92,16 @@
    :file-descriptors FileDescriptorUsageV1
    :gc-stats GcStatsV1
    :up-time-ms WholeMilliseconds
-   :start-time-ms WholeMilliseconds})
+   :start-time-ms WholeMilliseconds
+   :cpu-usage schema/Num
+   :gc-cpu-usage schema/Num})
 
 (def DebugLoggingConfig
   (schema/maybe {:interval-minutes schema/Num}))
 
 (def StatusServiceConfig
   {(schema/optional-key :debug-logging) DebugLoggingConfig
-   (schema/optional-key :cpu-metrics-interval-ms) schema/Int})
+   (schema/optional-key :cpu-metrics-interval-seconds) schema/Num})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Private
@@ -161,7 +163,7 @@
                         protocol))))))
 
 (schema/defn ^:always-validate get-jvm-metrics :- JvmMetricsV1
-  []
+  [cpu-snapshot :- cpu/CpuUsageSnapshot]
   (let [runtime-bean (ManagementFactory/getRuntimeMXBean)
         gc-beans (jmx/mbean-names "java.lang:name=*,type=GarbageCollector")]
     {:heap-memory (jmx/read "java.lang:type=Memory" :HeapMemoryUsage)
@@ -175,6 +177,8 @@
                                          (jmx/read gc [:CollectionCount :CollectionTime])
                                          {:CollectionCount :count :CollectionTime :total-time-ms})]
                             {gc-name gc-info})))
+     :cpu-usage (:cpu-usage cpu-snapshot)
+     :gc-cpu-usage (:gc-cpu-usage cpu-snapshot)
      :up-time-ms (.getUptime runtime-bean)
      :start-time-ms (.getStartTime runtime-bean)}))
 
@@ -203,10 +207,10 @@
       (let [interval-milliseconds (* 60000 interval-minutes)]
         (log/info "Starting background logging of status data")
         (interspaced interval-milliseconds log-status))))
-  (let [cpu-metrics-interval-ms (get-in config [:cpu-metrics-interval-ms] 0)]
-    (when (pos? cpu-metrics-interval-ms)
+  (let [cpu-metrics-interval-seconds (get-in config [:cpu-metrics-interval-seconds] 5)]
+    (when (pos? cpu-metrics-interval-seconds)
       (log/info "Starting background monitoring of cpu usage metrics")
-      (interspaced cpu-metrics-interval-ms
+      (interspaced (* cpu-metrics-interval-seconds 1000)
                    (partial update-cpu-usage-metrics last-cpu-snapshot)))))
 
 (schema/defn ^:always-validate nominal? :- schema/Bool
@@ -527,7 +531,8 @@
 ;;; Status Service Status
 
 (schema/defn ^:always-validate v1-status :- StatusCallbackResponse
-  [level :- ServiceStatusDetailLevel]
+  [last-cpu-snapshot :- (schema/atom cpu/CpuUsageSnapshot)
+   level :- ServiceStatusDetailLevel]
   (let [level>= (partial compare-levels >= level)]
     {:state :running
      :status (cond->
@@ -536,12 +541,13 @@
               ;; no extra status at ':info' level yet
               (level>= :info) identity
               (level>= :debug) (assoc-in [:experimental :jvm-metrics]
-                                         (get-jvm-metrics)))}))
+                                         (get-jvm-metrics @last-cpu-snapshot)))}))
 
 (schema/defn status-latest-version :- StatusCallbackResponse
   "This function will return the status data from the latest version of the API"
-  [level :- ServiceStatusDetailLevel]
-  (v1-status level))
+  [last-cpu-snapshot :- (schema/atom cpu/CpuUsageSnapshot)
+   level :- ServiceStatusDetailLevel]
+  (v1-status last-cpu-snapshot level))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Status Proxy

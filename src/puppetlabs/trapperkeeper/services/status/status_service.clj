@@ -33,28 +33,24 @@
                                                         :process-cpu-time -1
                                                         :process-gc-time -1}
                                              :cpu-usage -1
-                                             :gc-usage -1})))
+                                             :gc-cpu-usage -1})))
 
   (start [this context]
-   (let [config (status-core/validate-config (get-in-config [:status]))]
-     (status-core/schedule-bg-tasks interspaced status-logging/log-status
-                                    config (:last-cpu-snapshot context)))
+   (let [config (status-core/validate-config (get-in-config [:status]))
+         cpu-snapshot (:last-cpu-snapshot context)]
+     (status-core/schedule-bg-tasks interspaced
+                                    (partial status-logging/log-status cpu-snapshot)
+                                    config
+                                    cpu-snapshot)
 
-    (register-status this status-core/status-service-name
-                     status-core/status-service-version
-                     1
-                     (partial status-core/v1-status))
-    (log/info (i18n/trs "Registering status service HTTP API at /status"))
+     (register-status this status-core/status-service-name
+                      status-core/status-service-version
+                      1
+                      (partial status-core/v1-status cpu-snapshot)))
+         (log/info (i18n/trs "Registering status service HTTP API at /status"))
     (let [path (get-route this)
           handler (status-core/build-handler path (deref (:status-fns context)))]
       (add-ring-handler this handler))
-    (let [debug-logging-config (schema/validate status-core/DebugLoggingConfig
-                                                (get-in-config [:status :debug-logging]))
-          interval-minutes (:interval-minutes debug-logging-config)]
-      (when interval-minutes
-        (let [interval-milliseconds (* 60000 interval-minutes)]
-          (log/info "Starting background logging of status data")
-          (interspaced interval-milliseconds status-logging/log-status))))
     context)
 
   (stop [this context]

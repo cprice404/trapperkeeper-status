@@ -48,7 +48,7 @@
                 :process-cpu-time process-cpu-time
                 :process-gc-time process-gc-time}
      :cpu-usage (float (max cpu-usage 0))
-     :gc-usage (float (max gc-usage 0))}))
+     :gc-cpu-usage (float (max gc-usage 0))}))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SCRATCH CODE for playing around with this

@@ -517,7 +517,7 @@
     (with-status-service-with-config
      app
      []
-     (merge status-service-config {:status {:cpu-metrics-interval-ms 20}})
+     (merge status-service-config {:status {:cpu-metrics-interval-seconds 0.02}})
      (Thread/sleep 100)
      (let [s (tka/get-service app :StatusService)
            sc (service-context s)
@@ -527,7 +527,7 @@
        (is (< 0 (:process-cpu-time first-timers)))
        (is (< 0 (:process-gc-time first-timers)))
        (is (<= 0 (:cpu-usage first-cpu-snapshot)))
-       (is (<= 0 (:gc-usage first-cpu-snapshot)))
+       (is (<= 0 (:gc-cpu-usage first-cpu-snapshot)))
 
        (Thread/sleep 100)
        (let [second-cpu-snapshot @(:last-cpu-snapshot sc)
@@ -536,13 +536,21 @@
          (is (< (:process-cpu-time first-timers) (:process-cpu-time second-timers)))
          (is (<= (:process-gc-time first-timers) (:process-gc-time second-timers)))
          (is (<= 0 (:cpu-usage first-cpu-snapshot)))
-         (is (<= 0 (:gc-usage first-cpu-snapshot))))))
-    (testing "Accessible via HTTP"
-      (is (true? false))))
+         (is (<= 0 (:gc-cpu-usage first-cpu-snapshot)))
+
+
+         (testing "CPU metrics are accessible via http"
+           (let [resp (http-client/get "http://localhost:8180/status/v1/services/status-service?level=debug")]
+             (is (= 200 (:status resp)))
+             (let [body (parse-response resp true)
+                   jvm-metrics (get-in body [:status :experimental :jvm-metrics])]
+               (is (<= 0 (:cpu-usage jvm-metrics)))
+               (is (<= 0 (:gc-cpu-usage jvm-metrics))))))))))
   (testing "cpu usage metrics are not updated when setting is disabled"
-    (with-status-service
+    (with-status-service-with-config
      app
      []
+     (merge status-service-config {:status {:cpu-metrics-interval-seconds 0}})
      ;; TODO: this test doesn't really cover anything without a sleep that is
      ;; longer than the default interval, and I don't really want to sleep that
      ;; long in the test, so it's not really useful.  Should try to think of
@@ -556,4 +564,4 @@
        (is (= -1 (:process-cpu-time timers)))
        (is (= -1 (:process-gc-time timers)))
        (is (= -1 (:cpu-usage last-cpu-snapshot)))
-       (is (= -1 (:gc-usage last-cpu-snapshot)))))))
+       (is (= -1 (:gc-cpu-usage last-cpu-snapshot)))))))

@@ -15,7 +15,7 @@
               :process-cpu-time schema/Int
               :process-gc-time schema/Int}
    :cpu-usage schema/Num
-   :gc-usage schema/Num})
+   :gc-cpu-usage schema/Num})
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Private
@@ -83,7 +83,7 @@
                                :process-cpu-time process-cpu-time
                                :process-gc-time process-gc-time}
                     :cpu-usage (float (max cpu-usage 0))
-                    :gc-usage (float (max gc-usage 0))}]
+                    :gc-cpu-usage (float (max gc-usage 0))}]
         (log/trace "Latest cpu usage metrics: " (ks/pprint-to-string result))
         result))))
 
